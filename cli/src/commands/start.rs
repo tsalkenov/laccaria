@@ -16,8 +16,10 @@ impl StartArgs {
             log::error!("Cannot parse invalid command");
             std::process::exit(1);
         };
+        log::info!("{:?}", args);
 
         proxy.start(&self.name, args).await?;
+        log::info!("sent");
         Ok(())
     }
 }

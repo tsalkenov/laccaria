@@ -26,7 +26,7 @@ pub enum Commands {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    env_logger::builder()
+    pretty_env_logger::formatted_builder()
         .filter(None, log::LevelFilter::Info)
         .init();
 

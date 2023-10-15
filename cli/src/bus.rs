@@ -1,9 +1,9 @@
 use zbus::{dbus_proxy, Result};
 
 #[dbus_proxy(
-    interface = "org.amanita.ProcessManager",
-    default_service = "org.amanita.ProcessManager",
-    default_path = "/org/amanita/ProcessManager"
+    interface = "org.laccaria.Processes",
+    default_service = "org.laccaria.Processes",
+    default_path = "/org/laccaria/Processes"
 )]
 pub trait ProcessManager {
     async fn start(&self, name: &str, command: Vec<String>) -> Result<()>;
