@@ -3,6 +3,10 @@ name = "cli"
 version.workspace = true
 edition.workspace = true
 
+[[bin]]
+name = "laccaria"
+path = "src/main.rs"
+
 [dependencies]
 tokio = { version = "1.29", features = ["macros", "rt-multi-thread"] }
 shlex = "1.1"

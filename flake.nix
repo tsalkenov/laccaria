@@ -11,11 +11,13 @@
         devShells.default = mkShell rec {
           packages = [
             pkg-config
+            openssl
+            sqlite-web
           ];
         };
 
         shellHook = ''
-          export LD_LIBRARY_PATH = ${stdenv.cc.cc.lib}/lib
+          export LD_LIBRARY_PATH = ${stdenv.cc.cc.lib}/lib;
         '';
       }
     );

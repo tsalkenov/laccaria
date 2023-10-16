@@ -1,22 +1,30 @@
-use std::{path::PathBuf, env, fs};
+use std::{env, fs, io, path::PathBuf};
 
 const STATE_DIR: &str = ".laccaria";
-pub const ACCESS_LOG: &str = "access.log";
-pub const ERROR_LOG: &str = "error.log";
+pub const LOG: &str = "access.log";
+pub const DB: &str = "db.db";
 
 pub fn state_dir() -> PathBuf {
     let Ok(home) = env::var("HOME") else {
         log::error!("HOME variable not specified");
         std::process::exit(1)
     };
-    let state_dir = PathBuf::from(home).join(STATE_DIR);
+    PathBuf::from(home).join(STATE_DIR)
+}
 
-    if !state_dir.exists() {
-        if let Err(e) = fs::create_dir_all(&state_dir) {
-            log::error!("Failed to create state folder: {e}");
-            std::process::exit(1)
+pub fn init_state() -> Result<(), io::Error> {
+    let state_dir = state_dir();
+    fs::create_dir_all(&state_dir)?;
+    let derivatives = vec![state_dir.join(LOG), state_dir.join(DB)];
+
+    for derivative in derivatives {
+        if !derivative.exists() {
+            if let Err(e) = fs::File::create(&derivative) {
+                log::error!("Failed to create state file: {e}");
+                std::process::exit(1)
+            }
         }
     }
-    state_dir
 
+    Ok(())
 }
