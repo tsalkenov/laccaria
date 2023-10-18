@@ -8,6 +8,6 @@ use zbus::{dbus_proxy, Result};
 pub trait ProcessManager {
     async fn start(&self, name: &str, command: Vec<String>) -> Result<()>;
     async fn kill(&self, name: &str) -> Result<()>;
-    async fn list(&self) -> Result<()>;
+    async fn list(&self) -> Result<Vec<(u32, String, u32, f32, u32, bool)>>;
     async fn delete(&self, name: &str) -> Result<()>;
 }

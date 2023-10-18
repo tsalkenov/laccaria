@@ -3,7 +3,7 @@ use clap::{Parser, Subcommand};
 mod bus;
 mod commands;
 
-use commands::{delete::DeleteArgs, kill::KillArgs, start::StartArgs};
+use commands::{delete::DeleteArgs, kill::KillArgs, start::StartArgs, list::ListArgs};
 use zbus::Connection;
 
 #[derive(Parser)]
@@ -22,12 +22,14 @@ pub enum Commands {
     Kill(KillArgs),
     /// Permanently remove any state conne related to process
     Delete(DeleteArgs),
+    /// List all processes
+    List(ListArgs)
 }
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     pretty_env_logger::formatted_builder()
-        .filter(None, log::LevelFilter::Info)
+        .filter(Some("laccaria"), log::LevelFilter::Info)
         .init();
 
     let cli = Cli::parse();
@@ -35,9 +37,14 @@ async fn main() -> anyhow::Result<()> {
     let connection = Connection::session().await?;
     let proxy = bus::ProcessManagerProxy::new(&connection).await?;
 
-    match cli.command {
+    if let Err(e) = match cli.command {
         Commands::Start(args) => args.run(proxy).await,
         Commands::Kill(args) => args.run(proxy).await,
         Commands::Delete(args) => args.run(proxy).await,
+        Commands::List(args) => args.run(proxy).await,
+    } {
+        log::error!("Error during command execution:\n{e}");
     }
+
+    Ok(())
 }
