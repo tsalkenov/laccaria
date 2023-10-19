@@ -3,7 +3,9 @@ use clap::{Parser, Subcommand};
 mod bus;
 mod commands;
 
-use commands::{delete::DeleteArgs, kill::KillArgs, start::StartArgs, list::ListArgs};
+use commands::{
+    delete::DeleteArgs, kill::KillArgs, list::ListArgs, restart::RestartArgs, start::StartArgs,
+};
 use zbus::Connection;
 
 #[derive(Parser)]
@@ -23,7 +25,9 @@ pub enum Commands {
     /// Permanently remove any state conne related to process
     Delete(DeleteArgs),
     /// List all processes
-    List(ListArgs)
+    List(ListArgs),
+    /// Restart saved process
+    Restart(RestartArgs),
 }
 
 #[tokio::main]
@@ -42,6 +46,7 @@ async fn main() -> anyhow::Result<()> {
         Commands::Kill(args) => args.run(proxy).await,
         Commands::Delete(args) => args.run(proxy).await,
         Commands::List(args) => args.run(proxy).await,
+        Commands::Restart(args) => args.run(proxy).await,
     } {
         log::error!("Error during command execution:\n{e}");
     }

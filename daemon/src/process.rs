@@ -14,6 +14,7 @@ pub enum Status {
 pub struct Model {
     #[sea_orm(primary_key)]
     pub id: u32,
+    pub pid: u32,
     #[sea_orm(unique)]
     pub name: String,
     pub status: Status,

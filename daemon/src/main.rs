@@ -47,7 +47,8 @@ impl ProcessManager {
         }
 
         match (process::ActiveModel {
-            id: Set(proc.id()),
+            id: NotSet,
+            pid: Set(proc.id()),
             name: Set(name),
             status: Set(process::Status::Active),
             command: Set(shlex::join(command.iter().map(String::as_str))),
@@ -93,9 +94,9 @@ impl ProcessManager {
             return Err(fdo::Error::Failed("Can't kill dead process".into()));
         }
 
-        self.sys.refresh_process((proc.id as usize).into());
+        self.sys.refresh_process((proc.pid as usize).into());
         self.sys
-            .process((proc.id as usize).into())
+            .process((proc.pid as usize).into())
             .ok_or(fdo::Error::Failed("Couldn't find process".into()))?
             .kill();
 
@@ -107,26 +108,26 @@ impl ProcessManager {
         Ok(())
     }
 
-    async fn list(&mut self) -> fdo::Result<Vec<(u32, String, u32, f32, u32, bool)>> {
+    async fn list(&mut self) -> fdo::Result<Vec<(u32, String, u32, f32, f32, bool)>> {
         let procs = process::Entity::find().all(&self.db).await.into_dbus()?;
 
         Ok(procs
             .into_iter()
             .map(|p| match p.status {
                 process::Status::Active => {
-                    self.sys.refresh_process((p.id as usize).into());
-                    let sys_proc = self.sys.process((p.id as usize).into()).unwrap();
+                    self.sys.refresh_process((p.pid as usize).into());
+                    let sys_proc = self.sys.process((p.pid as usize).into()).unwrap();
 
                     (
-                        p.id,
+                        p.pid,
                         p.name,
                         (sys_proc.memory() / 1048576) as u32,
                         sys_proc.cpu_usage(),
-                        (sys_proc.run_time() / 60) as u32,
+                        (sys_proc.run_time() as f32 / 60.),
                         p.status as u32 == 1,
                     )
                 }
-                process::Status::Dead => (p.id, p.name, 0, 0., 0, p.status as u32 == 1),
+                process::Status::Dead => (p.pid, p.name, 0, 0., 0., p.status as u32 == 1),
             })
             .collect())
     }
@@ -158,6 +159,7 @@ impl ProcessManager {
             .into_dbus()?;
 
         let mut process_model = process_model.into_active_model();
+        process_model.pid = Set(proc.id());
         process_model.status = Set(process::Status::Active);
         let process_model = process_model.update(&self.db).await.into_dbus()?;
 
