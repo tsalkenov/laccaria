@@ -144,12 +144,18 @@ impl ProcessManager {
         Ok(())
     }
 
-    async fn restart(&self, name: &str) -> fdo::Result<()> {
+    async fn restart(&mut self, name: &str, force: bool) -> fdo::Result<()> {
         let process_model = process::Model::find_by_name(name, &self.db).await?;
         if let process::Status::Active = process_model.status {
-            return Err(fdo::Error::Failed(
-                "Cannot restart running process".to_string(),
-            ));
+            if force {
+                let pid = (process_model.pid as usize).into();
+                self.sys.refresh_process(pid);
+                self.sys.process(pid).unwrap().kill();
+            } else {
+                return Err(fdo::Error::Failed(
+                    "Cannot restart running process".to_string(),
+                ));
+            }
         }
         let command = shlex::split(&process_model.command).unwrap();
 

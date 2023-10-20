@@ -10,5 +10,5 @@ pub trait ProcessManager {
     async fn kill(&self, name: &str) -> Result<()>;
     async fn list(&self) -> Result<Vec<(u32, String, u32, f32, f32, bool)>>;
     async fn delete(&self, name: &str) -> Result<()>;
-    async fn restart(&self, name: &str) -> Result<()>;
+    async fn restart(&self, name: &str, force: bool) -> Result<()>;
 }
