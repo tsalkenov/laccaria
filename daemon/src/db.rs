@@ -29,9 +29,15 @@ pub async fn setup_db(db: &DatabaseConnection) {
     let schema = Schema::new(builder);
 
     #[cfg(feature = "clean")]
-    db.execute(builder.build(sea_orm::sea_query::TableDropStatement::new().table(process::Entity).if_exists()))
-        .await
-        .expect("how the fuck did you fail to drop table");
+    db.execute(
+        builder.build(
+            sea_orm::sea_query::TableDropStatement::new()
+                .table(process::Entity)
+                .if_exists(),
+        ),
+    )
+    .await
+    .expect("how the fuck did you fail to drop table");
     db.execute(
         builder.build(
             schema

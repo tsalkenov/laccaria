@@ -4,12 +4,14 @@ use crate::bus::ProcessManagerProxy;
 
 #[derive(Args)]
 pub struct DeleteArgs {
-    name: String
+    name: String,
 }
 
 impl DeleteArgs {
     pub async fn run(self, proxy: ProcessManagerProxy<'_>) -> anyhow::Result<()> {
+        log::info!("Deleting process {}", self.name);
         proxy.delete(&self.name).await?;
-        Ok(())
+
+        Ok(log::info!("Successfully deleted process"))
     }
 }

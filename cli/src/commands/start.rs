@@ -4,6 +4,9 @@ use crate::bus::ProcessManagerProxy;
 
 #[derive(Args)]
 pub struct StartArgs {
+    #[arg(long)]
+    /// Automatically restart process
+    auto_restart: bool,
     /// Process name
     name: String,
     /// Command to run process
@@ -12,14 +15,11 @@ pub struct StartArgs {
 
 impl StartArgs {
     pub async fn run(self, proxy: ProcessManagerProxy<'_>) -> anyhow::Result<()> {
-        let Some(args) = shlex::split(&self.command) else {
-            log::error!("Cannot parse invalid command");
-            std::process::exit(1);
-        };
-        log::info!("{:?}", args);
+        log::info!("Starting process {}", self.name);
+        proxy
+            .start(&self.name, self.auto_restart, &self.command)
+            .await?;
 
-        proxy.start(&self.name, args).await?;
-        log::info!("sent");
-        Ok(())
+        Ok(log::info!("Process started"))
     }
 }

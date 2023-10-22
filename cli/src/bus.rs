@@ -6,9 +6,9 @@ use zbus::{dbus_proxy, Result};
     default_path = "/org/laccaria/Processes"
 )]
 pub trait ProcessManager {
-    async fn start(&self, name: &str, command: Vec<String>) -> Result<()>;
+    async fn start(&self, name: &str, restart: bool, command: &str) -> Result<()>;
     async fn kill(&self, name: &str) -> Result<()>;
-    async fn list(&self) -> Result<Vec<(u32, String, u32, f32, f32, bool)>>;
+    async fn list(&self) -> Result<Vec<(u32, String, u32, f32, f32, bool, bool)>>;
     async fn delete(&self, name: &str) -> Result<()>;
     async fn restart(&self, name: &str, force: bool) -> Result<()>;
 }

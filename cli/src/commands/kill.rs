@@ -10,8 +10,9 @@ pub struct KillArgs {
 
 impl KillArgs {
     pub async fn run(self, proxy: ProcessManagerProxy<'_>) -> anyhow::Result<()> {
+        log::info!("Stopping process {}", self.name);
         proxy.kill(&self.name).await?;
-        Ok(())
+
+        Ok(log::info!("Process stopped"))
     }
 }
-

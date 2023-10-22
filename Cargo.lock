@@ -604,7 +604,6 @@ dependencies = [
  "comfy-table",
  "log",
  "pretty_env_logger",
- "shlex",
  "tokio",
  "zbus",
 ]

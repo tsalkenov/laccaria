@@ -1,6 +1,5 @@
+use anyhow::Context;
 use sea_orm::entity::prelude::*;
-
-use crate::DbusAdaptable;
 
 #[derive(DeriveActiveEnum, EnumIter, PartialEq, Clone, Debug)]
 #[sea_orm(rs_type = "u32", db_type = "Integer")]
@@ -19,6 +18,8 @@ pub struct Model {
     pub name: String,
     pub status: Status,
     pub command: String,
+    #[sea_orm(default_value = false)]
+    pub restart: bool,
 }
 
 #[derive(Clone, Debug, EnumIter, DeriveRelation)]
@@ -27,12 +28,19 @@ pub enum Relation {}
 impl ActiveModelBehavior for ActiveModel {}
 
 impl Model {
-    pub async fn find_by_name(name: &str, db: &DatabaseConnection) -> zbus::fdo::Result<Self> {
+    pub async fn find_by_name(name: &str, db: &DatabaseConnection) -> anyhow::Result<Self> {
         Entity::find()
             .filter(Column::Name.eq(name))
             .one(db)
-            .await
-            .into_dbus()?
-            .ok_or(zbus::fdo::Error::Failed("Process not found".to_string()))
+            .await?
+            .context("Process not found")
+    }
+
+    pub async fn find_by_pid(pid: u32, db: &DatabaseConnection) -> anyhow::Result<Self> {
+        Entity::find()
+            .filter(Column::Pid.eq(pid))
+            .one(db)
+            .await?
+            .context("Process not found")
     }
 }
