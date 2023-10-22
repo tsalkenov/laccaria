@@ -8,14 +8,13 @@ name = "laccaria-daemon"
 path = "src/main.rs"
 
 [dependencies]
-tokio = { version = "1.29", features = ["macros", "rt-multi-thread", "process"] }
 zbus = "3.14"
 env_logger = "0.10"
 log = "0.4"
 anyhow = "1.0.75"
 daemonize = "0.5.0"
 pretty_env_logger = "0.5.0"
-async-std = { version = "1.12.0", features = ["attributes", "unstable"] }
+async-std = { version = "1.12.0", features = ["unstable"] }
 sea-orm = { version = "0.12.3", features = ["sqlx-sqlite", "runtime-async-std-native-tls", "macros"] }
 sysinfo = "0.29.10"
 shlex = "1.2.0"
