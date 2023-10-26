@@ -42,34 +42,12 @@ impl ProcessManager {
 
         log::info!("Started \"{name}\" with pid: {}", proc.child.id());
 
-        if process::Process::find_by_name(&name, &self.db).await.is_ok() {
+        if process::Process::find_by_name(name.clone(), &self.db).is_ok() {
             return Err(fdo::Error::Failed(
                 "Process with the same name already exists".to_string(),
             ));
         }
 
-        if let Err(e) = (process::ActiveModel {
-            pid: Set(proc.child.id()),
-            name: Set(name),
-            status: Set(process::Status::Active),
-            command: Set(command),
-            restart: Set(restart),
-            ..Default::default()
-        }
-        .insert(&self.db)
-        .await)
-        {
-            match e.sql_err() {
-                Some(SqlErr::UniqueConstraintViolation(_)) => {
-                    return Err(fdo::Error::Failed(
-                        "Process with the same name already exists".to_string(),
-                    ));
-                }
-                _ => {
-                    return Err(e).into_dbus();
-                }
-            }
-        }
         log::info!("Saved process info");
 
         proc.attach_watcher(self.db.clone());
