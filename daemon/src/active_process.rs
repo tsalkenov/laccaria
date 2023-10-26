@@ -9,18 +9,18 @@ use sea_orm::{ActiveModelTrait, DbConn, IntoActiveModel, Set};
 
 use crate::process;
 
-pub struct Process {
+pub struct ActiveProcess {
     pub child: Child,
     name: String,
     command: Vec<String>,
     watcher: Option<JoinHandle<anyhow::Result<ExitStatus>>>,
 }
 
-impl Process {
+impl ActiveProcess {
     pub fn create(command: &str, name: String) -> anyhow::Result<Self> {
         let command = shlex::split(command).context("Inavlid command string")?;
 
-        Ok(Process {
+        Ok(ActiveProcess {
             child: Command::new(&command[0]).args(&command[1..]).spawn()?,
             name,
             command,
@@ -43,7 +43,7 @@ impl Process {
             status_future: impl Future<Output = Result<ExitStatus, std::io::Error>>,
             db: DbConn,
         ) -> anyhow::Result<ExitStatus> {
-            let mut process_model = process::Model::find_by_pid(pid, &db)
+            let mut process_model = process::Process::find_by_pid(pid, &db)
                 .await?
                 .into_active_model();
 
@@ -63,7 +63,7 @@ impl Process {
             }
         });
 
-        async fn restarter(mut process: Process, db: DbConn) -> anyhow::Result<()> {
+        async fn restarter(mut process: ActiveProcess, db: DbConn) -> anyhow::Result<()> {
             let status = process
                 .watcher
                 .context("Cannot attach restart to unwatched process")?
@@ -86,7 +86,7 @@ impl Process {
                 .spawn()?;
 
             let name = process.name.clone();
-            let mut process_model = process::Model::find_by_name(&name, &db)
+            let mut process_model = process::Process::find_by_name(&name, &db)
                 .await?
                 .into_active_model();
 

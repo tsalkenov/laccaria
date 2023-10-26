@@ -7,14 +7,15 @@ pub mod state;
 use std::{fmt, fs};
 
 use daemonize::Daemonize;
+use db::{Db, Search};
 use sea_orm::*;
 use state::{init_state, state_dir, LOG};
 use sysinfo::{ProcessExt, System, SystemExt};
 use zbus::{dbus_interface, fdo, ConnectionBuilder};
 
 use crate::{
-    active_process::Process,
-    db::{get_db, setup_db},
+    active_process::ActiveProcess,
+    db::{get_db, get_search_engine},
 };
 
 trait DbusAdaptable<T, E> {
@@ -28,7 +29,8 @@ impl<T, E: fmt::Display> DbusAdaptable<T, E> for Result<T, E> {
 }
 
 struct ProcessManager {
-    db: DatabaseConnection,
+    db: Db,
+    search: Search,
     sys: System,
 }
 
@@ -36,11 +38,11 @@ struct ProcessManager {
 impl ProcessManager {
     async fn start(&self, name: String, restart: bool, command: String) -> fdo::Result<()> {
         log::info!("Starting process \"{name}\"");
-        let mut proc = Process::create(&command, name.clone()).into_dbus()?;
+        let mut proc = ActiveProcess::create(&command, name.clone()).into_dbus()?;
 
         log::info!("Started \"{name}\" with pid: {}", proc.child.id());
 
-        if process::Model::find_by_name(&name, &self.db).await.is_ok() {
+        if process::Process::find_by_name(&name, &self.db).await.is_ok() {
             return Err(fdo::Error::Failed(
                 "Process with the same name already exists".to_string(),
             ));
@@ -80,7 +82,7 @@ impl ProcessManager {
 
     async fn kill(&mut self, name: String) -> fdo::Result<()> {
         log::info!("Killing process \"{name}\"");
-        let proc = process::Model::find_by_name(&name, &self.db)
+        let proc = process::Process::find_by_name(&name, &self.db)
             .await
             .into_dbus()?;
 
@@ -131,7 +133,7 @@ impl ProcessManager {
 
     async fn delete(&self, name: &str) -> fdo::Result<()> {
         log::info!("Deleting process \"{name}\"");
-        let proc = process::Model::find_by_name(name, &self.db)
+        let proc = process::Process::find_by_name(name, &self.db)
             .await
             .into_dbus()?;
 
@@ -146,7 +148,7 @@ impl ProcessManager {
 
     async fn restart(&mut self, name: &str, force: bool) -> fdo::Result<()> {
         log::info!("Restarting process \"{name}\"");
-        let process_model = process::Model::find_by_name(name, &self.db)
+        let process_model = process::Process::find_by_name(name, &self.db)
             .await
             .into_dbus()?;
         if let process::Status::Active = process_model.status {
@@ -160,7 +162,7 @@ impl ProcessManager {
                 ));
             }
         }
-        let mut proc = Process::create(&process_model.command, name.to_string()).into_dbus()?;
+        let mut proc = ActiveProcess::create(&process_model.command, name.to_string()).into_dbus()?;
 
         let mut process_model = process_model.into_active_model();
         process_model.pid = Set(proc.child.id());
@@ -198,13 +200,13 @@ fn main() -> anyhow::Result<()> {
 }
 
 async fn async_main() -> anyhow::Result<()> {
-    let db = get_db().await?;
+    let db = get_db()?;
+    let search = get_search_engine(&db)?;
     let mut sys = System::new();
     sys.refresh_processes();
 
-    setup_db(&db).await;
 
-    let process_manager = ProcessManager { db, sys };
+    let process_manager = ProcessManager { db, search, sys };
     let _connection = ConnectionBuilder::session()?
         .name("org.laccaria.Processes")?
         .serve_at("/org/laccaria/Processes", process_manager)?
