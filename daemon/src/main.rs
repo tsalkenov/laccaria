@@ -7,15 +7,16 @@ pub mod state;
 use std::{fmt, fs};
 
 use daemonize::Daemonize;
-use db::{Db, Search};
-use sea_orm::*;
+use db::Db;
 use state::{init_state, state_dir, LOG};
 use sysinfo::{ProcessExt, System, SystemExt};
+use typed_sled::CompareAndSwapError;
 use zbus::{dbus_interface, fdo, ConnectionBuilder};
 
 use crate::{
     active_process::ActiveProcess,
-    db::{get_db, get_search_engine},
+    db::get_db,
+    process::{Process, Status},
 };
 
 trait DbusAdaptable<T, E> {
@@ -30,7 +31,6 @@ impl<T, E: fmt::Display> DbusAdaptable<T, E> for Result<T, E> {
 
 struct ProcessManager {
     db: Db,
-    search: Search,
     sys: System,
 }
 
@@ -38,15 +38,28 @@ struct ProcessManager {
 impl ProcessManager {
     async fn start(&self, name: String, restart: bool, command: String) -> fdo::Result<()> {
         log::info!("Starting process \"{name}\"");
-        let mut proc = ActiveProcess::create(&command, name.clone()).into_dbus()?;
+        let mut proc = ActiveProcess::create(&command, &name).into_dbus()?;
 
         log::info!("Started \"{name}\" with pid: {}", proc.child.id());
 
-        if process::Process::find_by_name(name.clone(), &self.db).is_ok() {
+        let static_proc = Process {
+            pid: proc.child.id(),
+            status: Status::Active,
+            command,
+            restart,
+        };
+
+        if let Err(CompareAndSwapError {
+            current: Some(_), ..
+        }) = self
+            .db
+            .compare_and_swap(&name, None, Some(&static_proc))
+            .into_dbus()?
+        {
             return Err(fdo::Error::Failed(
                 "Process with the same name already exists".to_string(),
             ));
-        }
+        };
 
         log::info!("Saved process info");
 
@@ -60,9 +73,7 @@ impl ProcessManager {
 
     async fn kill(&mut self, name: String) -> fdo::Result<()> {
         log::info!("Killing process \"{name}\"");
-        let proc = process::Process::find_by_name(&name, &self.db)
-            .await
-            .into_dbus()?;
+        let proc = Process::get(&name, &self.db).into_dbus()?;
 
         if let process::Status::Dead = proc.status {
             return Err(fdo::Error::Failed("Can't kill dead process".into()));
@@ -76,76 +87,68 @@ impl ProcessManager {
 
         log::info!("Process \"{name}\" succesfully killed");
 
-        let mut proc = proc.into_active_model();
-        proc.status = Set(process::Status::Dead);
-
         Ok(())
     }
 
     async fn list(&mut self) -> fdo::Result<Vec<(u32, String, u32, f32, f32, bool, bool)>> {
-        let procs = process::Entity::find().all(&self.db).await.into_dbus()?;
+        Ok(self
+            .db
+            .iter()
+            .filter_map(|pair| {
+                let (name, p) = pair.ok()?;
+                match p.status {
+                    Status::Active => {
+                        self.sys.refresh_process((p.pid as usize).into());
+                        let sys_proc = self.sys.process((p.pid as usize).into()).unwrap();
 
-        Ok(procs
-            .into_iter()
-            .map(|p| match p.status {
-                process::Status::Active => {
-                    self.sys.refresh_process((p.pid as usize).into());
-                    let sys_proc = self.sys.process((p.pid as usize).into()).unwrap();
-
-                    (
-                        p.pid,
-                        p.name,
-                        (sys_proc.memory() / 1048576) as u32,
-                        sys_proc.cpu_usage(),
-                        (sys_proc.run_time() as f32 / 60.),
-                        p.restart,
-                        p.status as u32 == 1,
-                    )
-                }
-                process::Status::Dead => {
-                    (p.pid, p.name, 0, 0., 0., p.restart, p.status as u32 == 1)
+                        Some((
+                            p.pid,
+                            name,
+                            (sys_proc.memory() / 1048576) as u32,
+                            sys_proc.cpu_usage(),
+                            (sys_proc.run_time() as f32 / 60.),
+                            p.restart,
+                            p.status as u32 == 1,
+                        ))
+                    }
+                    Status::Dead => Some((p.pid, name, 0, 0., 0., p.restart, p.status as u32 == 1)),
                 }
             })
             .collect())
     }
 
-    async fn delete(&self, name: &str) -> fdo::Result<()> {
+    async fn delete(&self, name: String) -> fdo::Result<()> {
         log::info!("Deleting process \"{name}\"");
-        let proc = process::Process::find_by_name(name, &self.db)
-            .await
-            .into_dbus()?;
+        let proc = Process::get(&name, &self.db).into_dbus()?;
 
         if let process::Status::Active = proc.status {
             return Err(fdo::Error::Failed("Cannot delete active process".into()));
         }
 
-        proc.delete(&self.db).await.into_dbus()?;
+        self.db.remove(&name).into_dbus()?;
 
         Ok(())
     }
 
-    async fn restart(&mut self, name: &str, force: bool) -> fdo::Result<()> {
+    async fn restart(&mut self, name: String, force: bool) -> fdo::Result<()> {
         log::info!("Restarting process \"{name}\"");
-        let process_model = process::Process::find_by_name(name, &self.db)
-            .await
-            .into_dbus()?;
-        if let process::Status::Active = process_model.status {
-            if force {
-                let pid = (process_model.pid as usize).into();
-                self.sys.refresh_process(pid);
-                self.sys.process(pid).unwrap().kill();
-            } else {
+        let mut process_model = Process::get(&name, &self.db).into_dbus()?;
+        if let Status::Active = process_model.status {
+            if !force {
                 return Err(fdo::Error::Failed(
                     "Cannot restart running process".to_string(),
                 ));
             }
+            let pid = (process_model.pid as usize).into();
+            self.sys.refresh_process(pid);
+            self.sys.process(pid).unwrap().kill();
         }
-        let mut proc = ActiveProcess::create(&process_model.command, name.to_string()).into_dbus()?;
+        let mut proc = ActiveProcess::create(&process_model.command, &name).into_dbus()?;
 
-        let mut process_model = process_model.into_active_model();
-        process_model.pid = Set(proc.child.id());
-        process_model.status = Set(process::Status::Active);
-        let process_model = process_model.update(&self.db).await.into_dbus()?;
+        process_model.pid = proc.child.id();
+        process_model.status = Status::Active;
+
+        self.db.insert(&name, &process_model).into_dbus()?;
 
         proc.attach_watcher(self.db.clone());
         if process_model.restart {
@@ -179,12 +182,10 @@ fn main() -> anyhow::Result<()> {
 
 async fn async_main() -> anyhow::Result<()> {
     let db = get_db()?;
-    let search = get_search_engine(&db)?;
     let mut sys = System::new();
     sys.refresh_processes();
 
-
-    let process_manager = ProcessManager { db, search, sys };
+    let process_manager = ProcessManager { db, sys };
     let _connection = ConnectionBuilder::session()?
         .name("org.laccaria.Processes")?
         .serve_at("/org/laccaria/Processes", process_manager)?

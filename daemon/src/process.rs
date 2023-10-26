@@ -17,14 +17,8 @@ pub struct Process {
     pub restart: bool,
 }
 
-impl Default for Process {
-    fn default() -> Self {
-        Process { pid: 0, status: Status::Dead, command: String::new(), restart: false }
-    }
-}
-
 impl Process {
-    pub fn find_by_name(name: String, db: &Db) -> anyhow::Result<Self>{
-        db.get(&name)?.context("Process not found")
+    pub fn get<'a, S: Into<&'a String>>(name: S, db: &Db) -> anyhow::Result<Self>{
+        db.get(name.into())?.context("Process not found")
     }
 }

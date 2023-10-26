@@ -5,9 +5,11 @@ use async_std::{
     process::{Child, Command},
     task::JoinHandle,
 };
-use sea_orm::{ActiveModelTrait, DbConn, IntoActiveModel, Set};
 
-use crate::process;
+use crate::{
+    db::Db,
+    process::{Process, Status},
+};
 
 pub struct ActiveProcess {
     pub child: Child,
@@ -17,53 +19,52 @@ pub struct ActiveProcess {
 }
 
 impl ActiveProcess {
-    pub fn create(command: &str, name: String) -> anyhow::Result<Self> {
+    pub fn create(command: &str, name: &str) -> anyhow::Result<Self> {
         let command = shlex::split(command).context("Inavlid command string")?;
 
         Ok(ActiveProcess {
             child: Command::new(&command[0]).args(&command[1..]).spawn()?,
-            name,
+            name: name.to_string(),
             command,
             watcher: None,
         })
     }
 
-    pub fn attach_watcher(&mut self, db: DbConn) {
+    pub fn attach_watcher(&mut self, db: Db) {
         let status_future = self.child.status();
-        let pid = self.child.id();
+        let name = self.name.clone();
         self.watcher = Some(async_std::task::spawn(async move {
-            watcher(pid, status_future, db).await.map_err(|e| {
+            watcher(name, status_future, db).await.map_err(|e| {
                 log::error!("Process watcher failed with {e}");
                 e.context("Error from watcher")
             })
         }));
 
         async fn watcher(
-            pid: u32,
+            name: String,
             status_future: impl Future<Output = Result<ExitStatus, std::io::Error>>,
-            db: DbConn,
+            db: Db,
         ) -> anyhow::Result<ExitStatus> {
-            let mut process_model = process::Process::find_by_pid(pid, &db)
-                .await?
-                .into_active_model();
+            let mut static_proc = Process::get(&name, &db)?;
 
             let status = status_future.await?;
 
-            process_model.status = Set(process::Status::Dead);
-            process_model.update(&db).await?;
+            static_proc.status = Status::Dead;
+
+            db.insert(&name, &static_proc)?;
 
             Ok::<_, anyhow::Error>(status)
         }
     }
 
-    pub fn attach_restart(self, db: DbConn) {
+    pub fn attach_restart(self, db: Db) {
         async_std::task::spawn(async move {
             if let Err(e) = restarter(self, db).await {
                 log::error!("Process restarter failed with {e}");
             }
         });
 
-        async fn restarter(mut process: ActiveProcess, db: DbConn) -> anyhow::Result<()> {
+        async fn restarter(mut process: ActiveProcess, db: Db) -> anyhow::Result<()> {
             let status = process
                 .watcher
                 .context("Cannot attach restart to unwatched process")?
@@ -86,16 +87,14 @@ impl ActiveProcess {
                 .spawn()?;
 
             let name = process.name.clone();
-            let mut process_model = process::Process::find_by_name(&name, &db)
-                .await?
-                .into_active_model();
+            let mut static_process = Process::get(&name, &db)?;
 
-            process_model.status = Set(process::Status::Active);
-            process_model.pid = Set(process.child.id());
-            process_model.update(&db).await?;
+            static_process.status = Status::Active;
+            static_process.pid = process.child.id();
+
+            db.insert(&process.name, &static_process)?;
 
             process.attach_watcher(db.clone());
-
             process.attach_restart(db.clone());
             Ok(())
         }
