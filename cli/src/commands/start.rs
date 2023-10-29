@@ -16,6 +16,9 @@ pub struct StartArgs {
 impl StartArgs {
     pub async fn run(self, proxy: ProcessManagerProxy<'_>) -> anyhow::Result<()> {
         log::info!("Starting process {}", self.name);
+        if self.name.is_empty() {
+            anyhow::bail!("Cannnot create empty command");
+        }
         proxy
             .start(&self.name, self.auto_restart, &self.command)
             .await?;

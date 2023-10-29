@@ -1,4 +1,8 @@
-use std::{future::Future, process::ExitStatus};
+use std::{
+    env, fs,
+    future::Future,
+    process::{ExitStatus, Stdio},
+};
 
 use anyhow::Context;
 use async_std::{
@@ -9,6 +13,7 @@ use async_std::{
 use crate::{
     db::Db,
     process::{Process, Status},
+    state::{state_dir, PROC_LOG},
 };
 
 pub struct ActiveProcess {
@@ -22,8 +27,15 @@ impl ActiveProcess {
     pub fn create(command: &str, name: &str) -> anyhow::Result<Self> {
         let command = shlex::split(command).context("Inavlid command string")?;
 
+        let log_file = fs::File::create(state_dir().join(PROC_LOG).join(name.to_string() + ".log"))?;
+
         Ok(ActiveProcess {
-            child: Command::new(&command[0]).args(&command[1..]).spawn()?,
+            child: Command::new(&command[0])
+                .current_dir(env::current_dir()?)
+                .args(&command[1..])
+                .stdout(Stdio::from(log_file.try_clone()?))
+                .stderr(Stdio::from(log_file))
+                .spawn()?,
             name: name.to_string(),
             command,
             watcher: None,
@@ -31,13 +43,15 @@ impl ActiveProcess {
     }
 
     pub fn attach_watcher(&mut self, db: Db) {
-        let status_future = self.child.status();
-        let name = self.name.clone();
-        self.watcher = Some(async_std::task::spawn(async move {
-            watcher(name, status_future, db).await.map_err(|e| {
-                log::error!("Process watcher failed with {e}");
-                e.context("Error from watcher")
-            })
+        self.watcher = Some(async_std::task::spawn({
+            let status_future = self.child.status();
+            let name = self.name.clone();
+            async move {
+                watcher(name, status_future, db).await.map_err(|e| {
+                    log::error!("Process watcher failed with {e}");
+                    e.context("Error from watcher")
+                })
+            }
         }));
 
         async fn watcher(
@@ -83,6 +97,7 @@ impl ActiveProcess {
             process.watcher = None;
 
             process.child = Command::new(&process.command[0])
+                .current_dir(env::current_dir()?)
                 .args(&process.command[1..])
                 .spawn()?;
 

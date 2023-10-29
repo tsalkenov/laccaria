@@ -3,6 +3,7 @@ use std::{env, fs, io, path::PathBuf};
 const STATE_DIR: &str = ".laccaria";
 pub const LOG: &str = "access.log";
 pub const DB: &str = "db";
+pub const PROC_LOG: &str = "logs";
 
 pub fn state_dir() -> PathBuf {
     let Ok(home) = env::var("HOME") else {
@@ -15,7 +16,8 @@ pub fn state_dir() -> PathBuf {
 pub fn init_state() -> Result<(), io::Error> {
     let state_dir = state_dir();
     fs::create_dir_all(&state_dir)?;
-    fs::create_dir_all(state_dir.join(DB)).expect("fuck");
+    fs::create_dir_all(state_dir.join(DB))?;
+    fs::create_dir_all(state_dir.join(PROC_LOG))?;
 
     let derivatives = vec![state_dir.join(LOG)];
     for derivative in derivatives {

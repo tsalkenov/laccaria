@@ -18,7 +18,7 @@ pub struct Process {
 }
 
 impl Process {
-    pub fn get<'a, S: Into<&'a String>>(name: S, db: &Db) -> anyhow::Result<Self>{
+    pub fn get<'a, S: Into<&'a String>>(name: S, db: &Db) -> anyhow::Result<Self> {
         db.get(name.into())?.context("Process not found")
     }
 }
