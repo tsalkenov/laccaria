@@ -6,11 +6,12 @@ pub mod state;
 
 use std::{fmt, fs};
 
+use bitcode::{decode, encode};
 use daemonize::Daemonize;
 use db::Db;
+use sled::CompareAndSwapError;
 use state::{init_state, state_dir, LOG};
 use sysinfo::{ProcessExt, System, SystemExt};
-use typed_sled::CompareAndSwapError;
 use zbus::{dbus_interface, fdo, ConnectionBuilder};
 
 use crate::{
@@ -53,7 +54,11 @@ impl ProcessManager {
             current: Some(_), ..
         }) = self
             .db
-            .compare_and_swap(&name, None, Some(&static_proc))
+            .compare_and_swap(
+                &name,
+                None::<&[u8]>,
+                Some(encode(&static_proc).into_dbus()?),
+            )
             .into_dbus()?
         {
             return Err(fdo::Error::Failed(
@@ -95,23 +100,35 @@ impl ProcessManager {
             .db
             .iter()
             .filter_map(|pair| {
-                let (name, p) = pair.ok()?;
-                match p.status {
+                let (raw_name, raw_process) = pair.ok()?;
+                let (name, process): (String, Process) = (
+                    String::from_utf8(raw_name.to_vec()).unwrap(),
+                    decode(&raw_process).unwrap(),
+                );
+                match process.status {
                     Status::Active => {
-                        self.sys.refresh_process((p.pid as usize).into());
-                        let sys_proc = self.sys.process((p.pid as usize).into()).unwrap();
+                        self.sys.refresh_process((process.pid as usize).into());
+                        let sys_proc = self.sys.process((process.pid as usize).into()).unwrap();
 
                         Some((
-                            p.pid,
+                            process.pid,
                             name,
                             (sys_proc.memory() / 1048576) as u32,
                             sys_proc.cpu_usage(),
                             (sys_proc.run_time() as f32 / 60.),
-                            p.restart,
-                            p.status as u32 == 1,
+                            process.restart,
+                            process.status as u32 == 1,
                         ))
                     }
-                    Status::Dead => Some((p.pid, name, 0, 0., 0., p.restart, p.status as u32 == 1)),
+                    Status::Dead => Some((
+                        process.pid,
+                        name,
+                        0,
+                        0.,
+                        0.,
+                        process.restart,
+                        process.status as u32 == 1,
+                    )),
                 }
             })
             .collect())
@@ -148,7 +165,9 @@ impl ProcessManager {
         process_model.pid = proc.child.id();
         process_model.status = Status::Active;
 
-        self.db.insert(&name, &process_model).into_dbus()?;
+        self.db
+            .insert(&name, encode(&process_model).into_dbus()?)
+            .into_dbus()?;
 
         proc.attach_watcher(self.db.clone());
         if process_model.restart {

@@ -1,15 +1,15 @@
 use anyhow::Context;
-use serde::{Deserialize, Serialize};
+use bitcode::{decode, Decode, Encode};
 
 use crate::db::Db;
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Encode, Decode, Debug)]
 pub enum Status {
     Active = 1,
     Dead = 0,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Encode, Decode, Debug)]
 pub struct Process {
     pub pid: u32,
     pub status: Status,
@@ -18,7 +18,7 @@ pub struct Process {
 }
 
 impl Process {
-    pub fn get<'a, S: Into<&'a String>>(name: S, db: &Db) -> anyhow::Result<Self> {
-        db.get(name.into())?.context("Process not found")
+    pub fn get<S: AsRef<[u8]>>(name: S, db: &Db) -> anyhow::Result<Self> {
+        decode(&db.get(name)?.context("Process not found")?).map_err(Into::into)
     }
 }

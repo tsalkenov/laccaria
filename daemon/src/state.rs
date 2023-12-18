@@ -13,7 +13,7 @@ pub fn state_dir() -> PathBuf {
     PathBuf::from(home).join(STATE_DIR)
 }
 
-pub fn init_state() -> Result<(), io::Error> {
+pub fn init_state() -> io::Result<()> {
     let state_dir = state_dir();
     fs::create_dir_all(&state_dir)?;
     fs::create_dir_all(state_dir.join(DB))?;

@@ -17,7 +17,7 @@ async-std = { version = "1.12.0", features = ["unstable"] }
 sysinfo = "0.29.10"
 shlex = "1.2.0"
 serde = { version = "1.0.189", features = ["derive"] }
-typed-sled = { version = "0.2.3" } # TODO: Перейти на официальную имплементацию типизированного sled
+bitcode = "0.5.0"
 sled = "0.34.7"
 
 [features]

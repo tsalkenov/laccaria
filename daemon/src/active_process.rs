@@ -9,6 +9,7 @@ use async_std::{
     process::{Child, Command},
     task::JoinHandle,
 };
+use bitcode::encode;
 
 use crate::{
     db::Db,
@@ -27,7 +28,8 @@ impl ActiveProcess {
     pub fn create(command: &str, name: &str) -> anyhow::Result<Self> {
         let command = shlex::split(command).context("Inavlid command string")?;
 
-        let log_file = fs::File::create(state_dir().join(PROC_LOG).join(name.to_string() + ".log"))?;
+        let log_file =
+            fs::File::create(state_dir().join(PROC_LOG).join(name.to_string() + ".log"))?;
 
         Ok(ActiveProcess {
             child: Command::new(&command[0])
@@ -65,7 +67,7 @@ impl ActiveProcess {
 
             static_proc.status = Status::Dead;
 
-            db.insert(&name, &static_proc)?;
+            db.insert(name, encode(&static_proc)?)?;
 
             Ok::<_, anyhow::Error>(status)
         }
@@ -102,12 +104,12 @@ impl ActiveProcess {
                 .spawn()?;
 
             let name = process.name.clone();
-            let mut static_process = Process::get(&name, &db)?;
+            let mut static_process = Process::get(name, &db)?;
 
             static_process.status = Status::Active;
             static_process.pid = process.child.id();
 
-            db.insert(&process.name, &static_process)?;
+            db.insert(&process.name, encode(&static_process)?)?;
 
             process.attach_watcher(db.clone());
             process.attach_restart(db.clone());

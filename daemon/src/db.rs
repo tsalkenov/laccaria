@@ -1,14 +1,10 @@
 use std::sync::Arc;
 
-use typed_sled::Config;
+use sled::Config;
 
-use crate::{
-    process::Process,
-    state::{state_dir, DB},
-};
+use crate::state::{state_dir, DB};
 
-type Inner = typed_sled::Tree<String, Process>;
-pub type Db = Arc<Inner>;
+pub type Db = Arc<sled::Db>;
 
 pub fn get_db() -> anyhow::Result<Db> {
     #[cfg(feature = "clean")]
@@ -23,7 +19,6 @@ pub fn get_db() -> anyhow::Result<Db> {
     }
 
     let db = Config::new().path(state_dir().join(DB)).open()?;
-    let tree = Arc::new(Inner::open(&db, "procs"));
 
-    Ok(tree)
+    Ok(Arc::new(db))
 }
